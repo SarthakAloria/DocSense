@@ -1,26 +1,67 @@
+/*
+ * globals.css — Application-wide base styles for DocSearch AI
+ *
+ * What this file does:
+ *   1. Imports the Tailwind CSS v4 base layer.
+ *   2. Defines the two semantic colour tokens (--background, --foreground)
+ *      that flow into Tailwind's theme via @theme.
+ *   3. Respects the OS-level dark/light preference via prefers-color-scheme.
+ *   4. Sets the base <body> styles.
+ *
+ * Note on fonts:
+ *   The actual UI font-family is set inside page.tsx's <style> block using
+ *   --font-dm-sans (injected by layout.tsx).  The `font-family` declaration
+ *   here serves as a fallback before the Next.js font variable is available.
+ *
+ * Note on dark mode:
+ *   The component-level colour scheme (--bg, --accent, etc.) is defined
+ *   inline in page.tsx so it is always dark regardless of OS preference.
+ *   The tokens below only affect Tailwind utility classes that reference
+ *   `bg-background` or `text-foreground`.
+ */
+
+/* ── Tailwind v4 import (replaces @tailwind base/components/utilities) ── */
 @import "tailwindcss";
 
+/* ── Light-mode colour tokens ──────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #ffffff;   /* canvas white */
+  --foreground: #171717;   /* near-black text */
 }
 
+/* ── Tailwind theme bridge ──────────────────────────────────────────────── */
+/*
+ * @theme inline wires Tailwind's generated bg-background / text-foreground
+ * utilities to the CSS variables above, and also exposes the Next.js font
+ * variables as Tailwind font-family tokens.
+ */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans);  /* Geist Sans (if loaded) */
+  --font-mono: var(--font-geist-mono);  /* Geist Mono (if loaded) */
 }
 
+/* ── Dark-mode override — respects OS preference ───────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0a0a0a;   /* near-black canvas */
+    --foreground: #ededed;   /* off-white text */
   }
 }
 
+/* ── Base body styles ───────────────────────────────────────────────────── */
 body {
+  /*
+   * Uses the semantic tokens so the body background and text colour
+   * automatically switch with the OS dark/light preference.
+   */
   background: var(--background);
   color: var(--foreground);
+
+  /*
+   * Fallback font stack.  In practice, --font-dm-sans (injected by
+   * layout.tsx) overrides this via the inline <style> in page.tsx.
+   */
   font-family: Arial, Helvetica, sans-serif;
 }

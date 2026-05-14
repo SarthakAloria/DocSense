@@ -39,3 +39,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local editor settings
+.vscode/
+.idea/
+
+# optional docs exclusions
+documents/private/
+documents/secrets/
+
+# document types you may not want public
+documents/*.pdf
+documents/*.docx
+documents/*.xlsx
+
+# lockfile cleanup (choose one package manager)
+# Uncomment one depending on what you use
+
+# yarn.lock
+# package-lock.json
