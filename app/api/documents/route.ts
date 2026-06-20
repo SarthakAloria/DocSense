@@ -1,33 +1,8 @@
-/**
- * app/api/documents/route.ts
- *
- * GET /api/documents
- *
- * Purpose:
- *   Returns the full directory tree rooted at <project>/documents as a
- *   nested JSON structure.  The client-side DocTree component uses this to
- *   render the file explorer in the sidebar.
- *
- * Response shape:
- *   { documents: DocNode[], exists: boolean }
- *
- *   DocNode = { name, type: "folder"|"file", path, children?: DocNode[] }
- *
- * Notes:
- *   - Paths returned are relative to the documents/ root so they can be
- *     forwarded as query context without exposing the server's filesystem.
- *   - Hidden files/folders (name starts with ".") are excluded.
- *   - `runtime = "nodejs"` is required because `fs` is a Node-only module.
- */
-
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { Pinecone } from "@pinecone-database/pinecone";
+import { indexName } from "@/config";
 
-// Force the Node.js runtime; `fs` is not available in the Edge runtime.
 export const runtime = "nodejs";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DocNode {
   name: string;
@@ -36,69 +11,60 @@ interface DocNode {
   children?: DocNode[];
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+function buildTree(paths: string[]): DocNode[] {
+  const root: DocNode[] = [];
 
-/**
- * readDir — Recursively reads a directory and builds a DocNode tree.
- *
- * @param dirPath      - Absolute path of the directory to scan.
- * @param relativePath - Path relative to the documents/ root, used as node.path.
- * @returns            - Flat-at-root array of DocNode (folders contain children).
- */
-function readDir(dirPath: string, relativePath: string = ""): DocNode[] {
-  try {
-    const items = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const fullPath of paths) {
+    const parts = fullPath.split("/");
+    let level = root;
+    let currentPath = "";
 
-    return items
-      // Skip hidden files (e.g. .DS_Store, .gitkeep).
-      .filter((item) => !item.name.startsWith("."))
-      .map((item) => {
-        // Build a slash-joined relative path for each item.
-        const itemRelative = relativePath
-          ? `${relativePath}/${item.name}`
-          : item.name;
+    parts.forEach((part, i) => {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const isFile = i === parts.length - 1;
+      let node = level.find((n) => n.name === part);
 
-        if (item.isDirectory()) {
-          // Recurse into sub-directories and attach their nodes as children.
-          return {
-            name: item.name,
-            type: "folder" as const,
-            path: itemRelative,
-            children: readDir(path.join(dirPath, item.name), itemRelative),
-          };
-        }
-
-        // Leaf node — regular file.
-        return {
-          name: item.name,
-          type: "file" as const,
-          path: itemRelative,
-        };
-      });
-  } catch {
-    // If the directory cannot be read (permissions, race condition, etc.)
-    // return an empty array so the UI shows "No documents found."
-    return [];
+      if (!node) {
+        node = isFile
+          ? { name: part, type: "file", path: currentPath }
+          : { name: part, type: "folder", path: currentPath, children: [] };
+        level.push(node);
+      }
+      if (!isFile) level = node.children!;
+    });
   }
+
+  return root;
 }
 
-// ─── Route handler ────────────────────────────────────────────────────────────
-
-/**
- * GET /api/documents
- *
- * Reads the documents/ directory and returns its tree.
- * If the directory does not exist yet, returns an empty array with
- * exists: false so the client can prompt the user to run setup first.
- */
 export async function GET() {
-  const documentsPath = path.join(process.cwd(), "documents");
+  try {
+    const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! });
 
-  // Guard: directory might not exist before the user runs /api/setup.
-  if (!fs.existsSync(documentsPath)) {
+    const existing = await pinecone.listIndexes();
+    const exists = existing.indexes?.some((i) => i.name === indexName);
+    if (!exists) {
+      return NextResponse.json({ documents: [], exists: false });
+    }
+
+    const index = pinecone.index(indexName);
+    const sourcePaths = new Set<string>();
+    let paginationToken: string | undefined;
+
+    do {
+      const page = await index.listPaginated({ limit: 100, paginationToken });
+      for (const v of page.vectors ?? []) {
+        const id = v.id ?? "";
+        const lastHash = id.lastIndexOf("#");
+        if (lastHash > -1) sourcePaths.add(id.slice(0, lastHash));
+      }
+      paginationToken = page.pagination?.next;
+    } while (paginationToken);
+
+    const documents = buildTree(Array.from(sourcePaths).sort());
+    return NextResponse.json({ documents, exists: true });
+  } catch (err) {
+    console.error("Documents list error:", err);
     return NextResponse.json({ documents: [], exists: false });
   }
-
-  const documents = readDir(documentsPath);
-  return NextResponse.json({ documents, exists: true });
 }

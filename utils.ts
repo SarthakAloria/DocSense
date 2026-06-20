@@ -140,7 +140,7 @@ export const updatePinecone = async (
 
       // Build the vector record with all metadata needed for retrieval.
       const vector = {
-        id: `${txtPath}_${idx}`,   // unique ID: source path + chunk index
+        id: `${txtPath}#${idx}`,   // unique ID: source path + chunk index
         values: embeddingsArray[idx],
         metadata: {
           ...chunk.metadata,
